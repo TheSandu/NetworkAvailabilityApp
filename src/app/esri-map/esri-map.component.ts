@@ -2,6 +2,7 @@ import { Component, OnInit, ViewChild, ElementRef } from '@angular/core';
 import { loadModules } from 'esri-loader';
 import { Widget } from './esri-widget.class';
 import ConnectionPoints from './layers/conection-points.data.json';
+import Buildings from './layers/Chisinau_buildings.json';
 
 let EsriMap: any;
 let EsriMapView: any;
@@ -13,6 +14,7 @@ let Graphic: any;
 let PopupTemplate: any;
 let Point: any;
 let webMercatorUtils: any;
+let FeatureLayer: any;
 
 @Component({
   selector: 'app-esri-map',
@@ -24,49 +26,90 @@ export class EsriMapComponent implements OnInit {
   @ViewChild('mapViewNode')
   private mapViewEl: ElementRef;
   private conectionPointsLayer: any;
-  private connectionLayerPopup: any;
+  private buildingsLayer: any;
   private map: any;
   private mapView: any;
 
   constructor() { }
 
-  async setGraphicToConectionPointsLayer( graphics: any,  geometry?: any, symbology?: any, attributes?: any ) {
+  async setGraphicToCBuildingsLayer() {
     try {
 
-      for ( let graphic of graphics ) {
-
-        // console.log(  webMercatorUtils.toLatitudeLongitude( new Point({x:graphic.x,y:graphic.y}) ) );
-
-        var point = {
-          type: "point",  // autocasts as new Point()
-          longitude: webMercatorUtils.xyToLngLat(graphic.x,graphic.y)[0],
-          latitude: webMercatorUtils.xyToLngLat(graphic.x,graphic.y)[1],
-        };
-  
-        let markerSymbol = {
-          type: "simple-marker",  // autocasts as new SimpleMarkerSymbol()
-          color: [226, 119, 40]
-        };
-  
-        let pointAtt = attributes || {
-          Type: "SanduPoint",
-          Owner: "TheSandu",
-        };
-  
-        let popUp = {
-          title:'Test',
-          content:'{Owner}'
+      let renderer = {
+        type: "simple",  // autocasts as new SimpleRenderer()
+        symbol: {
+          type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+          color: [ 255, 128, 0, 0.5 ],
+          outline: {  // autocasts as new SimpleLineSymbol()
+            width: 1,
+            color: "black"
+          }
         }
+      };
+      
+      // @ts-ignore
+      // let featureSet = Buildings.features.map(( feature )=>{
+      //   feature.geometry.type = 'polygon';          
+      //   return feature;
+      // });
 
-        let pointGraphic = new Graphic({
-          geometry: point,
-          symbol: markerSymbol,
-          attributes: pointAtt,
-          popupTemplate: popUp
-        }); 
-        
-        this.conectionPointsLayer.add( pointGraphic );
+      this.buildingsLayer = new FeatureLayer({
+        // @ts-ignore
+        source: Buildings.features,
+        objectIdField: "FID",
+        renderer: renderer,
+        geometryType: 'polygon',
+      });
+
+    } catch (error) {
+      console.log(`Map::setGraphicToCBuildingsLayer error from esri-map.component.ts: ${error}`);
+    }
+  }
+
+  async setGraphicToConectionPointsLayer(  ) {
+    try {
+      let features = [];
+
+      for (let objId = 0; objId < ConnectionPoints.length; objId++) {
+        const element = ConnectionPoints[objId];
+        features.push({
+          geometry: {
+            type: "point",
+            x: webMercatorUtils.xyToLngLat( element.x, element.y )[0],
+            y: webMercatorUtils.xyToLngLat( element.x, element.y )[1],
+          },
+          attributes: {
+            ObjectID: objId,
+          }
+        });
       }
+
+      var diamondSymbol = {
+        type: "simple-marker",  // autocasts as new SimpleMarkerSymbol()
+        style: "circle",
+        color: [ 255, 128, 45 ],  // autocasts as new Color()
+        outline: {              // autocasts as new SimpleLineSymbol()
+          color: [ 0, 0, 0 ] // Again, no need for specifying new Color()
+        }
+      };
+    
+
+      let popupTemplate = {
+        title: "Connection Point",
+        content: "{ObjectID}",
+      }; 
+
+      this.conectionPointsLayer = new FeatureLayer({
+        source: features,
+        objectIdField: "ObjectID",
+        renderer: {
+          type: "simple",  // autocasts as new SimpleRenderer()
+          symbol: diamondSymbol,
+        },
+        geometryType: 'point',
+        popupTemplate: popupTemplate,
+      });
+
     } catch (error) {
       console.log(`Map::setGraphicToConectionPointsLayer error from esri-map.component.ts: ${error}`);
     }
@@ -85,8 +128,7 @@ export class EsriMapComponent implements OnInit {
       [PopupTemplate] = await loadModules(['esri/PopupTemplate']);
       [Point] = await loadModules(['esri/geometry/Point']);
       [webMercatorUtils] = await loadModules(['esri/geometry/support/webMercatorUtils']);
-
-      this.conectionPointsLayer = new GraphicsLayer();
+      [FeatureLayer] = await loadModules(['esri/layers/FeatureLayer']);
 
     } catch (error) {
       console.log(`Map::init error from esri-map.component.ts: ${error}`);
@@ -97,7 +139,8 @@ export class EsriMapComponent implements OnInit {
     try {
 
       await this.init();
-      await this.setGraphicToConectionPointsLayer( ConnectionPoints );
+      await this.setGraphicToConectionPointsLayer();
+      await this.setGraphicToCBuildingsLayer();
       // Make Map, basemap openstreetmap
       this.map = new EsriMap({
         basemap: 'osm',
@@ -105,7 +148,7 @@ export class EsriMapComponent implements OnInit {
       });
 
       this.map.add( this.conectionPointsLayer );
-
+      // this.map.add( this.buildingsLayer );
 
       // Set MapView coordonates. zoom and attach to map
       this.mapView = new EsriMapView({
@@ -133,7 +176,7 @@ export class EsriMapComponent implements OnInit {
       // Create search widget
       const search = new Search({ 
         view: this.mapView,
-        sources: [ this.conectionPointsLayer ]  // Add Geocoder or layer: any
+        // sources: [ this.conectionPointsLayer ]  // Add Geocoder or layer: any
       });
       
       // Availability widget
@@ -166,6 +209,34 @@ export class EsriMapComponent implements OnInit {
           index: 1,  
         },
       ]);
+
+
+      this.mapView.on( 'click', async( event )=>{
+        try {
+    
+          let query = this.buildingsLayer.createQuery();
+          query.geometry = event.mapPoint;
+    
+          let selectedBuilding = await this.buildingsLayer.queryFeatures( query );
+
+          let selectedGraphic = new Graphic({
+            geometry: selectedBuilding.features[0].geometry,
+            attributes: selectedBuilding.features[0].attributes,
+            symbol: {
+              type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+              color: [ 255, 128, 0, 0.5 ],
+              outline: {  // autocasts as new SimpleLineSymbol()
+                width: 1,
+                color: "black"
+              }
+            }
+          });
+          this.map.removeAll();
+          this.map.add( selectedGraphic );
+        } catch (error) {
+          console.log(`Map::mapView.on( 'click' ) error from esri-map.component.ts: ${error}`);
+        }
+      });
 
     } catch (error) {
       console.log(`Map::ngOnInit error from esri-map.component.ts: ${error}`);
