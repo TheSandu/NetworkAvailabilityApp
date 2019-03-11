@@ -46,16 +46,9 @@ export class EsriMapComponent implements OnInit {
           }
         }
       };
-      
-      // @ts-ignore
-      let featureSet = Buildings.features.map(( feature )=>{
-        feature.geometry.type = 'polygon';          
-        return feature;
-      });
 
       this.buildingsLayer = new FeatureLayer({
-        // @ts-ignore
-        source: Buildings.features,
+        source: Buildings,
         objectIdField: "FID",
         renderer: renderer,
         geometryType: 'polygon',
@@ -137,7 +130,6 @@ export class EsriMapComponent implements OnInit {
 
   async ngOnInit() {
     try {
-
       await this.init();
       await this.setGraphicToConectionPointsLayer();
       await this.setGraphicToCBuildingsLayer();
@@ -158,10 +150,6 @@ export class EsriMapComponent implements OnInit {
         map: this.map,
       });
 
-      // this.mapView.on('click', (event)=>{
-      //   console.log(event);
-      // });
-      
       // Create BasemamGallery widget
       const basemapGallery = new BasemapGallery({
         view: this.mapView,
@@ -213,11 +201,13 @@ export class EsriMapComponent implements OnInit {
 
       this.mapView.on( 'click', async( event )=>{
         try {
-    
+
           let query = this.buildingsLayer.createQuery();
           query.geometry = event.mapPoint;
     
           let selectedBuilding = await this.buildingsLayer.queryFeatures( query );
+
+          console.log(selectedBuilding.features);
 
           if( !selectedBuilding.features )
             return;
@@ -234,6 +224,8 @@ export class EsriMapComponent implements OnInit {
               }
             }
           });
+
+
 
           let selectedGraphicLayer = new GraphicsLayer({
             graphics: [selectedGraphic],
