@@ -48,10 +48,10 @@ export class EsriMapComponent implements OnInit {
       };
       
       // @ts-ignore
-      // let featureSet = Buildings.features.map(( feature )=>{
-      //   feature.geometry.type = 'polygon';          
-      //   return feature;
-      // });
+      let featureSet = Buildings.features.map(( feature )=>{
+        feature.geometry.type = 'polygon';          
+        return feature;
+      });
 
       this.buildingsLayer = new FeatureLayer({
         // @ts-ignore
@@ -219,6 +219,9 @@ export class EsriMapComponent implements OnInit {
     
           let selectedBuilding = await this.buildingsLayer.queryFeatures( query );
 
+          if( !selectedBuilding.features )
+            return;
+
           let selectedGraphic = new Graphic({
             geometry: selectedBuilding.features[0].geometry,
             attributes: selectedBuilding.features[0].attributes,
@@ -231,8 +234,13 @@ export class EsriMapComponent implements OnInit {
               }
             }
           });
-          this.map.removeAll();
-          this.map.add( selectedGraphic );
+
+          let selectedGraphicLayer = new GraphicsLayer({
+            graphics: [selectedGraphic],
+          });
+
+          this.map.layers.remove( selectedGraphicLayer );
+          this.map.layers.add( selectedGraphicLayer );
         } catch (error) {
           console.log(`Map::mapView.on( 'click' ) error from esri-map.component.ts: ${error}`);
         }
