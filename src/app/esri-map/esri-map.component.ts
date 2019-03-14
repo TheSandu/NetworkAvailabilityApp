@@ -15,6 +15,8 @@ let PopupTemplate: any;
 let Point: any;
 let webMercatorUtils: any;
 let FeatureLayer: any;
+let Polygon: any;
+let Polyline: any;
 
 @Component({
   selector: 'app-esri-map',
@@ -29,6 +31,7 @@ export class EsriMapComponent implements OnInit {
   private buildingsLayer: any;
   private map: any;
   private mapView: any;
+  private selectedGraphicLayer: any;
 
   constructor() { }
 
@@ -77,7 +80,7 @@ export class EsriMapComponent implements OnInit {
         });
       }
 
-      var diamondSymbol = {
+      let diamondSymbol = {
         type: "simple-marker",  // autocasts as new SimpleMarkerSymbol()
         style: "circle",
         color: [ 255, 128, 45 ],  // autocasts as new Color()
@@ -116,16 +119,125 @@ export class EsriMapComponent implements OnInit {
       [Expand] = await loadModules(['esri/widgets/Expand']);
       [BasemapGallery] = await loadModules(['esri/widgets/BasemapGallery']);
       [Search] = await loadModules(['esri/widgets/Search']);
-      [GraphicsLayer] = await loadModules(['esri/layers/GraphicsLayer']);
+      // [GraphicsLayer] = await loadModules(['esri/layers/GraphicsLayer']);
       [Graphic] = await loadModules(['esri/Graphic']);
       [PopupTemplate] = await loadModules(['esri/PopupTemplate']);
       [Point] = await loadModules(['esri/geometry/Point']);
       [webMercatorUtils] = await loadModules(['esri/geometry/support/webMercatorUtils']);
       [FeatureLayer] = await loadModules(['esri/layers/FeatureLayer']);
+      [Polygon] = await loadModules(['esri/geometry/Polygon']);
+      [Polyline] = await loadModules(['esri/geometry/Polyline']);
 
     } catch (error) {
       console.log(`Map::init error from esri-map.component.ts: ${error}`);
     }
+  }
+
+  async selectBuilding( feature ) {
+    let selectedGraphic = new Graphic({
+      geometry: feature.geometry,
+      attributes: feature.attributes,
+      symbol: {
+        type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+        color: [ 255, 128, 0, 0.5 ],
+        outline: {  // autocasts as new SimpleLineSymbol()
+          width: 1,
+          color: "black"
+        }
+      }
+    });
+
+    let selectedAsPoligon = new Polygon( feature.geometry );
+
+    let centroid = new Graphic({
+      geometry: selectedAsPoligon.centroid,
+      symbol: {
+        type: "simple-marker", // autocasts as new SimpleMarkerSymbol()
+        color: [226, 119, 40],
+        outline: { // autocasts as new SimpleLineSymbol()
+          color: [0, 0, 255],
+          width: 2
+        }
+      },
+    });
+
+    this.mapView.graphics.add( selectedGraphic );
+    this.mapView.graphics.add( centroid );
+
+    return selectedAsPoligon.centroid;
+  }
+
+
+  async drowLine( firstPoint: any, secondPoint: any ) {
+
+    let paths = [
+        [ webMercatorUtils.xyToLngLat( firstPoint.x, firstPoint.y )[0], webMercatorUtils.xyToLngLat( firstPoint.x, firstPoint.y )[1] ],
+        [ webMercatorUtils.xyToLngLat( secondPoint.x, secondPoint.y )[0], webMercatorUtils.xyToLngLat( secondPoint.x, secondPoint.y )[1] ],
+      ];
+
+    var line = new Polyline({
+      paths: paths,
+    });
+    let lineSymbol = {
+        type: "simple-line",
+        style: "short-dash",
+        width: 1.75,
+        color: [255, 0, 0, 1]
+    };
+
+    let graphic = new Graphic({
+      geometry: line,
+      symbol: lineSymbol,
+    });
+    this.mapView.graphics.add( graphic );
+    return graphic;
+
+  }
+
+  async selectPoint( point ) {
+    let graphic = new Graphic({
+      geometry: point.geometry,
+      symbol: {
+        type: "simple-marker", // autocasts as new SimpleMarkerSymbol()
+        color: [226, 119, 40],
+        outline: { // autocasts as new SimpleLineSymbol()
+          color: [0, 255, 0],
+          width: 2
+        }
+      },
+    });
+
+    this.mapView.graphics.add( graphic );
+
+    return graphic;
+  }
+
+  async getClosestConnectionPoint( centroid ) {
+    try {
+      let closestConnectionPoint: any;
+      let diamentru = 0;
+  
+      while( !closestConnectionPoint ) {
+        diamentru += 10;
+  
+        let query = this.conectionPointsLayer.createQuery();
+        query.geometry = centroid;
+        query.distance = diamentru;
+        
+        let closestConnectionPointSet = await this.conectionPointsLayer.queryFeatures( query );
+        closestConnectionPoint = closestConnectionPointSet.features[0];
+  
+      }
+
+      return closestConnectionPoint;  
+
+    } catch (error) {
+      console.log(`Map::getClosestConnectionPoint error from esri-map.component.ts: ${error}`);
+    }
+  }
+
+  async clearMap() {
+    this.mapView.graphics.removeAll();
   }
 
   async ngOnInit() {
@@ -199,40 +311,28 @@ export class EsriMapComponent implements OnInit {
       ]);
 
 
-      this.mapView.on( 'click', async( event )=>{
+      this.mapView.on( 'click', async ( event ) => {
         try {
 
           let query = this.buildingsLayer.createQuery();
           query.geometry = event.mapPoint;
     
           let selectedBuilding = await this.buildingsLayer.queryFeatures( query );
-
-          console.log(selectedBuilding.features);
-
+    
           if( !selectedBuilding.features )
             return;
+    
+          this.clearMap();
+          
+          let selectedPoint = await this.selectBuilding( selectedBuilding.features[0] );
+    
+          let closestPoint = await this.getClosestConnectionPoint( selectedPoint );
 
-          let selectedGraphic = new Graphic({
-            geometry: selectedBuilding.features[0].geometry,
-            attributes: selectedBuilding.features[0].attributes,
-            symbol: {
-              type: "simple-fill",  // autocasts as new SimpleFillSymbol()
-              color: [ 255, 128, 0, 0.5 ],
-              outline: {  // autocasts as new SimpleLineSymbol()
-                width: 1,
-                color: "black"
-              }
-            }
-          });
+          await this.selectPoint( closestPoint );
 
+          console.log( selectedPoint, closestPoint.geometry );
+          await this.drowLine( selectedPoint, closestPoint.geometry );
 
-
-          let selectedGraphicLayer = new GraphicsLayer({
-            graphics: [selectedGraphic],
-          });
-
-          this.map.layers.remove( selectedGraphicLayer );
-          this.map.layers.add( selectedGraphicLayer );
         } catch (error) {
           console.log(`Map::mapView.on( 'click' ) error from esri-map.component.ts: ${error}`);
         }
