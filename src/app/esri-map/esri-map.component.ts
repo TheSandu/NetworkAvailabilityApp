@@ -17,6 +17,8 @@ let webMercatorUtils: any;
 let FeatureLayer: any;
 let Polygon: any;
 let Polyline: any;
+let geometryEngine: any;
+let Draw: any;
 
 @Component({
   selector: 'app-esri-map',
@@ -32,6 +34,7 @@ export class EsriMapComponent implements OnInit {
   private map: any;
   private mapView: any;
   private selectedGraphicLayer: any;
+  private availabilityExpandWidget: any;
 
   constructor() { }
 
@@ -60,6 +63,59 @@ export class EsriMapComponent implements OnInit {
     } catch (error) {
       console.log(`Map::setGraphicToCBuildingsLayer error from esri-map.component.ts: ${error}`);
     }
+  }
+
+
+  // function that checks if the line intersects itself
+  async isSelfIntersecting(polyline) {
+    if (polyline.paths[0].length < 3) {
+      return false
+    }
+    const line = polyline.clone();
+
+    //get the last segment from the polyline that is being drawn
+    const lastSegment = this.getLastSegment(polyline);
+    line.removePoint(0, line.paths[0].length - 1);
+
+    // returns true if the line intersects itself, false otherwise
+    return geometryEngine.crosses(lastSegment, line);
+  }
+
+  // Checks if the line intersects itself. If yes, change the last
+  // segment's symbol giving a visual feedback to the user.
+  async getIntersectingSegment(polyline) {
+    if (this.isSelfIntersecting(polyline)) {
+      return new Graphic({
+        geometry: this.getLastSegment(polyline),
+        symbol: {
+          type: "simple-line", // autocasts as new SimpleLineSymbol
+          style: "short-dot",
+          width: 3.5,
+          color: "yellow"
+        }
+      });
+    }
+    return null;
+  }
+
+  // Get the last segment of the polyline that is being drawn
+  async getLastSegment(polyline) {
+    const line = polyline.clone();
+    const lastXYPoint = line.removePoint(0, line.paths[0].length - 1);
+    const existingLineFinalPoint = line.getPoint(0, line.paths[0].length -
+      1);
+
+    return {
+      type: "polyline",
+      spatialReference: this.mapView.spatialReference,
+      hasZ: false,
+      paths: [
+        [
+          [existingLineFinalPoint.x, existingLineFinalPoint.y],
+          [lastXYPoint.x, lastXYPoint.y]
+        ]
+      ]
+    };
   }
 
   async setGraphicToConectionPointsLayer(  ) {
@@ -127,6 +183,8 @@ export class EsriMapComponent implements OnInit {
       [FeatureLayer] = await loadModules(['esri/layers/FeatureLayer']);
       [Polygon] = await loadModules(['esri/geometry/Polygon']);
       [Polyline] = await loadModules(['esri/geometry/Polyline']);
+      [geometryEngine] = await loadModules(['esri/geometry/geometryEngine']);
+      [Draw] = await loadModules(['esri/views/2d/draw/Draw']);
 
     } catch (error) {
       console.log(`Map::init error from esri-map.component.ts: ${error}`);
@@ -134,86 +192,134 @@ export class EsriMapComponent implements OnInit {
   }
 
   async selectBuilding( feature ) {
-    let selectedGraphic = new Graphic({
-      geometry: feature.geometry,
-      attributes: feature.attributes,
-      symbol: {
-        type: "simple-fill",  // autocasts as new SimpleFillSymbol()
-        color: [ 255, 128, 0, 0.5 ],
-        outline: {  // autocasts as new SimpleLineSymbol()
-          width: 1,
-          color: "black"
+    try {
+      if( !feature.hasOwnProperty( 'geometry' ) ) 
+      return;
+
+      let selectedGraphic = new Graphic({
+        geometry: feature.geometry,
+        attributes: feature.attributes,
+        symbol: {
+          type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+          color: [ 255, 128, 0, 0.5 ],
+          outline: {  // autocasts as new SimpleLineSymbol()
+            width: 1,
+            color: "black"
+          }
         }
-      }
-    });
+      });
 
-    let selectedAsPoligon = new Polygon( feature.geometry );
+      let selectedAsPoligon = new Polygon( feature.geometry );
 
-    let centroid = new Graphic({
-      geometry: selectedAsPoligon.centroid,
-      symbol: {
-        type: "simple-marker", // autocasts as new SimpleMarkerSymbol()
-        color: [226, 119, 40],
-        outline: { // autocasts as new SimpleLineSymbol()
-          color: [0, 0, 255],
-          width: 2
-        }
-      },
-    });
+      let center = new Graphic({
+        geometry: selectedAsPoligon.extent.center,
+        symbol: {
+          type: "simple-marker", // autocasts as new SimpleMarkerSymbol()
+          color: [226, 119, 40],
+          outline: { // autocasts as new SimpleLineSymbol()
+            color: [0, 0, 255],
+            width: 2
+          }
+        },
+      });
 
-    this.mapView.graphics.add( selectedGraphic );
-    this.mapView.graphics.add( centroid );
+      this.mapView.graphics.add( selectedGraphic );
+      this.mapView.graphics.add( center );
 
-    return selectedAsPoligon.centroid;
+      return selectedAsPoligon.extent.center;
+    } catch (error) {
+      console.log(`Map::selectBuilding error from esri-map.component.ts: ${error}`);
+    }
   }
 
 
-  async drowLine( firstPoint: any, secondPoint: any ) {
+  async drawPolyline( vertices: Array<any> ) {
+    try {
+      console.log( vertices );
 
-    let paths = [
-        [ webMercatorUtils.xyToLngLat( firstPoint.x, firstPoint.y )[0], webMercatorUtils.xyToLngLat( firstPoint.x, firstPoint.y )[1] ],
-        [ webMercatorUtils.xyToLngLat( secondPoint.x, secondPoint.y )[0], webMercatorUtils.xyToLngLat( secondPoint.x, secondPoint.y )[1] ],
-      ];
+      if( !Array.isArray( vertices ) ) 
+      return;
 
-    var line = new Polyline({
-      paths: paths,
-    });
-    let lineSymbol = {
-        type: "simple-line",
-        style: "short-dash",
-        width: 1.75,
-        color: [255, 0, 0, 1]
-    };
+      let line = new Polyline({
+        paths: vertices,
+      });
+      let lineSymbol = {
+          type: "simple-line",
+          style: "short-dash",
+          width: 1.75,
+          color: [255, 0, 0, 1]
+      };
 
-    let graphic = new Graphic({
-      geometry: line,
-      symbol: lineSymbol,
-    });
-    this.mapView.graphics.add( graphic );
-    return graphic;
+      let graphic = new Graphic({
+        geometry: line,
+        symbol: lineSymbol,
+      });
+      this.mapView.graphics.add( graphic );
+      return graphic;
+    } catch (error) {
+      console.log(`Map::drawPolyline error from esri-map.component.ts: ${error}`);
+    }
+  }
+  async drawLine( firstPoint: any, secondPoint: any ) {
+    try {
+      if( !firstPoint.x || !firstPoint.y || !secondPoint.x || !secondPoint.y ) 
+      return;
 
+      let paths = [
+          [ webMercatorUtils.xyToLngLat( firstPoint.x, firstPoint.y )[0], webMercatorUtils.xyToLngLat( firstPoint.x, firstPoint.y )[1] ],
+          [ webMercatorUtils.xyToLngLat( secondPoint.x, secondPoint.y )[0], webMercatorUtils.xyToLngLat( secondPoint.x, secondPoint.y )[1] ],
+        ];
+
+      let line = new Polyline({
+        paths: paths,
+      });
+      let lineSymbol = {
+          type: "simple-line",
+          style: "short-dash",
+          width: 1.75,
+          color: [255, 0, 0, 1]
+      };
+
+      let graphic = new Graphic({
+        geometry: line,
+        symbol: lineSymbol,
+      });
+      this.mapView.graphics.add( graphic );
+      return graphic;
+    } catch (error) {
+      console.log(`Map::drawLine error from esri-map.component.ts: ${error}`);
+    }
   }
 
   async selectPoint( point ) {
-    let graphic = new Graphic({
-      geometry: point.geometry,
-      symbol: {
-        type: "simple-marker", // autocasts as new SimpleMarkerSymbol()
-        color: [226, 119, 40],
-        outline: { // autocasts as new SimpleLineSymbol()
-          color: [0, 255, 0],
-          width: 2
-        }
-      },
-    });
 
-    this.mapView.graphics.add( graphic );
-
-    return graphic;
+    try {
+      let graphic = new Graphic({
+        geometry: point.geometry,
+        symbol: {
+          type: "simple-marker", // autocasts as new SimpleMarkerSymbol()
+          color: [226, 119, 40],
+          outline: { // autocasts as new SimpleLineSymbol()
+            color: [0, 255, 0],
+            width: 2
+          }
+        },
+      });
+  
+      this.mapView.graphics.add( graphic );
+  
+      return graphic;
+    } catch (error) {
+      console.log(`Map::selectPoint error from esri-map.component.ts: ${error}`);
+    }
   }
 
   async getClosestConnectionPoint( centroid ) {
     try {
+
+      if ( !centroid )
+        return;
+
       let closestConnectionPoint: any;
       let diamentru = 0;
   
@@ -281,21 +387,21 @@ export class EsriMapComponent implements OnInit {
       
       // Availability widget
       const availabilityWidget: Widget = new  Widget({
-        text: 'Widget test container',
+        text: '<div><div id=\'availabilityWidget\'></div><input id=\'drawLine\' type=\'button\' value=\'FreeHand Button\'></div>',
         height: '500px',
-        width: '500px',
+        width: '250px',
         padding: '10px',
         margin: '0px',
       });
 
       // Availability expanded widget 
-      const availabilityExpandWidget = new Expand({
+      this.availabilityExpandWidget = new Expand({
         content: availabilityWidget.getContainer(),
         view: this.mapView,
       });
 
       // Add widgets to MapView Interface
-      this.mapView.ui.add([{
+      await this.mapView.ui.add([{
           component: bgExpand,
           position: "top-right",
           index: 0,           
@@ -304,12 +410,177 @@ export class EsriMapComponent implements OnInit {
           position: "top-left",
           index: 0,           
         },{
-          component: availabilityExpandWidget,
+          component: this.availabilityExpandWidget,
           position: "top-right",
           index: 1,  
         },
       ]);
 
+      let draw = new Draw({
+        view: this.mapView,
+      });
+
+      let self = this;
+
+      // draw polyline button
+      document.getElementById("drawLine").onclick = function() {
+        self.mapView.graphics.removeAll();
+
+
+        // Get the last segment of the polyline that is being drawn
+        function getLastSegment(polyline) {
+          const line = polyline.clone();
+          const lastXYPoint = line.removePoint(0, line.paths[0].length - 1);
+          const existingLineFinalPoint = line.getPoint(
+            0,
+            line.paths[0].length - 1
+          );
+
+          return {
+            type: "polyline",
+            spatialReference: self.mapView.spatialReference,
+            hasZ: false,
+            paths: [
+              [
+                [existingLineFinalPoint.x, existingLineFinalPoint.y],
+                [lastXYPoint.x, lastXYPoint.y]
+              ]
+            ]
+          };
+        }
+
+        // function that checks if the line intersects itself
+        function isSelfIntersecting(polyline) {
+          if (polyline.paths[0].length < 3) {
+            return false;
+          }
+          const line = polyline.clone();
+
+          //get the last segment from the polyline that is being drawn
+          const lastSegment = getLastSegment(polyline);
+          line.removePoint(0, line.paths[0].length - 1);
+
+          // returns true if the line intersects itself, false otherwise
+          return geometryEngine.crosses(lastSegment, line);
+        }
+
+        // Checks if the line intersects itself. If yes, change the last
+        // segment's symbol giving a visual feedback to the user.
+        function getIntersectingSegment(polyline) {
+          if (isSelfIntersecting(polyline)) {
+            return new Graphic({
+              geometry: getLastSegment(polyline),
+              symbol: {
+                type: "simple-line", // autocasts as new SimpleLineSymbol
+                style: "short-dot",
+                width: 3.5,
+                color: "yellow"
+              }
+            });
+          }
+          return null;
+        }
+
+
+        // create a new graphic presenting the polyline that is being drawn on the view
+        function createGraphic(event) {
+          const vertices = event.vertices;
+          self.mapView.graphics.removeAll();
+
+          // a graphic representing the polyline that is being drawn
+          const graphic = new Graphic({
+            geometry: {
+              type: "polyline",
+              paths: vertices,
+              spatialReference: self.mapView.spatialReference
+            }, symbol: {
+              type: "simple-line",
+              style: "short-dash",
+              width: 1.75,
+              color: [255, 0, 0, 1]
+          }
+          });
+
+          // check if the polyline intersects itself.
+          const intersectingSegment = getIntersectingSegment(graphic.geometry);
+
+          // Add a new graphic for the intersecting segment.
+          if (intersectingSegment) {
+            self.mapView.graphics.addMany([graphic, intersectingSegment]);
+          }
+          // Just add the graphic representing the polyline if no intersection
+          else {
+            self.mapView.graphics.add(graphic);
+          }
+
+          // return intersectingSegment
+          return {
+            selfIntersects: intersectingSegment
+          };
+        }
+
+        // Checks if the last vertex is making the line intersect itself.
+        function updateVertices(event) {
+          // create a polyline from returned vertices
+          if (event.vertices.length > 1) {
+            const result = createGraphic(event);
+
+            // if the last vertex is making the line intersects itself,
+            // prevent the events from firing
+            if (result.selfIntersects) {
+              event.preventDefault();
+            }
+          }
+
+        }
+
+
+        async function stopDrawing( event ) {
+          try {
+            console.log('dai batae');
+            console.log( event );
+  
+            const graphic = new Graphic({
+              geometry: {
+                type: "polyline",
+                paths: event.vertices,
+                spatialReference: self.mapView.spatialReference
+              }
+            });
+
+            let lenght = await geometryEngine.geodesicLength( graphic.geometry, 9001);
+  
+            console.log( lenght );            
+          } catch (error) {
+            console.log( 'On complite event error: ', error );
+          }
+
+
+        }
+
+        const draw = new Draw({
+          view: self.mapView
+        });
+        const action = draw.create("polyline");
+
+        
+        action.on( "draw-complete", stopDrawing );
+
+        action.on( "vertex-add", ()=>{
+
+        } );
+
+        action.on(
+          [
+            "vertex-remove",
+            "cursor-update",
+            "redo",
+            "undo"
+          ],
+          updateVertices
+        );
+
+      }
 
       this.mapView.on( 'click', async ( event ) => {
         try {
@@ -319,7 +590,7 @@ export class EsriMapComponent implements OnInit {
     
           let selectedBuilding = await this.buildingsLayer.queryFeatures( query );
     
-          if( !selectedBuilding.features )
+          if( !selectedBuilding.features.length )
             return;
     
           this.clearMap();
@@ -330,8 +601,17 @@ export class EsriMapComponent implements OnInit {
 
           await this.selectPoint( closestPoint );
 
-          console.log( selectedPoint, closestPoint.geometry );
-          await this.drowLine( selectedPoint, closestPoint.geometry );
+          if( !closestPoint.hasOwnProperty( 'geometry' ) )
+            return;
+
+          await this.drawLine( selectedPoint, closestPoint.geometry );
+
+          let distance = geometryEngine.distance(selectedPoint, closestPoint.geometry , 9001);
+
+          document.getElementById( 'availabilityWidget' ).innerHTML = `Distanta: ${distance.toFixed(3)} m`;
+
+          if ( !this.availabilityExpandWidget.expanded )
+            this.availabilityExpandWidget.expand();
 
         } catch (error) {
           console.log(`Map::mapView.on( 'click' ) error from esri-map.component.ts: ${error}`);
