@@ -3,22 +3,22 @@ import { loadModules } from 'esri-loader';
 import { Widget } from './esri-widget.class';
 import ConnectionPoints from './layers/conection-points.data.json';
 import Buildings from './layers/Chisinau_buildings.json';
+import { ActivatedRouteSnapshot } from '@angular/router';
 
 let EsriMap: any;
 let EsriMapView: any;
 let Expand: any;
 let BasemapGallery: any;
 let Search: any;
-let GraphicsLayer: any;
 let Graphic: any;
-let PopupTemplate: any;
-let Point: any;
-let webMercatorUtils: any;
+let Legend: any;
 let FeatureLayer: any;
 let Polygon: any;
 let Polyline: any;
-let geometryEngine: any;
 let Draw: any;
+let webMercatorUtils: any;
+let geometryEngine: any;
+let watchUtils: any;
 
 @Component({
   selector: 'app-esri-map',
@@ -171,20 +171,25 @@ export class EsriMapComponent implements OnInit {
     try {
       // Load modules from loadModules Promise
       [EsriMap] = await loadModules(['esri/Map']);
-      [EsriMapView] = await loadModules(['esri/views/MapView']);
-      [Expand] = await loadModules(['esri/widgets/Expand']);
-      [BasemapGallery] = await loadModules(['esri/widgets/BasemapGallery']);
-      [Search] = await loadModules(['esri/widgets/Search']);
-      // [GraphicsLayer] = await loadModules(['esri/layers/GraphicsLayer']);
       [Graphic] = await loadModules(['esri/Graphic']);
-      [PopupTemplate] = await loadModules(['esri/PopupTemplate']);
-      [Point] = await loadModules(['esri/geometry/Point']);
-      [webMercatorUtils] = await loadModules(['esri/geometry/support/webMercatorUtils']);
+    
+      [watchUtils] = await loadModules(['esri/core/watchUtils']);
+    
+      [EsriMapView] = await loadModules(['esri/views/MapView']);
+      [Draw] = await loadModules(['esri/views/2d/draw/Draw']);
+    
       [FeatureLayer] = await loadModules(['esri/layers/FeatureLayer']);
+    
       [Polygon] = await loadModules(['esri/geometry/Polygon']);
       [Polyline] = await loadModules(['esri/geometry/Polyline']);
       [geometryEngine] = await loadModules(['esri/geometry/geometryEngine']);
-      [Draw] = await loadModules(['esri/views/2d/draw/Draw']);
+      [webMercatorUtils] = await loadModules(['esri/geometry/support/webMercatorUtils']);
+      [BasemapGallery] = await loadModules(['esri/widgets/BasemapGallery']);
+    
+      [Search] = await loadModules(['esri/widgets/Search']);
+      [Expand] = await loadModules(['esri/widgets/Expand']);
+      [Legend] = await loadModules(["esri/widgets/Legend"]);
+
 
     } catch (error) {
       console.log(`Map::init error from esri-map.component.ts: ${error}`);
@@ -235,7 +240,6 @@ export class EsriMapComponent implements OnInit {
 
   async drawPolyline( vertices: Array<any> ) {
     try {
-      console.log( vertices );
 
       if( !Array.isArray( vertices ) ) 
       return;
@@ -262,8 +266,11 @@ export class EsriMapComponent implements OnInit {
   }
   async drawLine( firstPoint: any, secondPoint: any ) {
     try {
-      if( !firstPoint.x || !firstPoint.y || !secondPoint.x || !secondPoint.y ) 
-      return;
+      if( !firstPoint.x || !firstPoint.y || !secondPoint.x || !secondPoint.y ) {
+        console.log( 'No found' );
+        return;
+      }
+      console.log( 'Found' );
 
       let paths = [
           [ webMercatorUtils.xyToLngLat( firstPoint.x, firstPoint.y )[0], webMercatorUtils.xyToLngLat( firstPoint.x, firstPoint.y )[1] ],
@@ -291,6 +298,20 @@ export class EsriMapComponent implements OnInit {
     }
   }
 
+  async getDistance( vertices ) {
+
+    const graphic = new Graphic({
+      geometry: {
+        type: "polyline",
+        paths: vertices,
+        spatialReference: this.mapView.spatialReference
+      }
+    });
+
+    let lenght = await geometryEngine.geodesicLength( graphic.geometry, 9001);
+    return lenght;
+  }
+
   async selectPoint( point ) {
 
     try {
@@ -314,6 +335,27 @@ export class EsriMapComponent implements OnInit {
     }
   }
 
+  async getConnectionPointInRadius( centroid, diamentru ) {
+    try {
+
+      if ( !centroid )
+        return;
+
+      let closestConnectionPoint: any;
+    
+      let query = this.conectionPointsLayer.createQuery();
+      query.geometry = centroid;
+      query.distance = diamentru;
+      
+      closestConnectionPoint = await this.conectionPointsLayer.queryFeatures( query );
+
+      return closestConnectionPoint.features.lenght !== 0 && closestConnectionPoint.features[0];
+
+    } catch (error) {
+      console.log(`Map::getConnectionPointInRadius error from esri-map.component.ts: ${error}`);
+    }
+  }
+
   async getClosestConnectionPoint( centroid ) {
     try {
 
@@ -329,13 +371,11 @@ export class EsriMapComponent implements OnInit {
         let query = this.conectionPointsLayer.createQuery();
         query.geometry = centroid;
         query.distance = diamentru;
-        
+
         let closestConnectionPointSet = await this.conectionPointsLayer.queryFeatures( query );
         closestConnectionPoint = closestConnectionPointSet.features[0];
-  
       }
-
-      return closestConnectionPoint;  
+      return closestConnectionPoint;
 
     } catch (error) {
       console.log(`Map::getClosestConnectionPoint error from esri-map.component.ts: ${error}`);
@@ -373,6 +413,24 @@ export class EsriMapComponent implements OnInit {
         view: this.mapView,
       });
 
+      // Create Legend widget
+
+      var legend = new Legend({
+        view: this.mapView,
+        layerInfos: [
+          {
+            layer: this.conectionPointsLayer,
+            title: "Puncte de conexiune"
+          }
+        ]
+      });
+
+      // Create Expand for Legend
+      const legendExpand = new Expand({
+        view: this.mapView,
+        content: legend,
+      });
+
       // Create Expand for BasemapGallary
       const bgExpand = new Expand({
         view: this.mapView,
@@ -400,9 +458,10 @@ export class EsriMapComponent implements OnInit {
         view: this.mapView,
       });
 
+      
       // Add widgets to MapView Interface
       await this.mapView.ui.add([{
-          component: bgExpand,
+        component: bgExpand,
           position: "top-right",
           index: 0,           
         },{
@@ -413,14 +472,27 @@ export class EsriMapComponent implements OnInit {
           component: this.availabilityExpandWidget,
           position: "top-right",
           index: 1,  
-        },
+        },{
+          component: legendExpand,
+          position: "bottom-left",
+          index: 0,
+        }
       ]);
-
+      
       let draw = new Draw({
         view: this.mapView,
       });
 
       let self = this;
+      
+      watchUtils.whenFalse( this.availabilityExpandWidget, 'expanded', ()=>{
+        try {
+          draw.complete();
+          self.mapView.graphics.removeAll();
+        } catch (error) {
+          console.log( 'On expand error:', error );
+        }
+      });
 
       // draw polyline button
       document.getElementById("drawLine").onclick = function() {
@@ -484,45 +556,69 @@ export class EsriMapComponent implements OnInit {
 
         // create a new graphic presenting the polyline that is being drawn on the view
         function createGraphic(event) {
-          const vertices = event.vertices;
-          self.mapView.graphics.removeAll();
-
-          // a graphic representing the polyline that is being drawn
-          const graphic = new Graphic({
-            geometry: {
-              type: "polyline",
-              paths: vertices,
-              spatialReference: self.mapView.spatialReference
-            }, symbol: {
-              type: "simple-line",
-              style: "short-dash",
-              width: 1.75,
-              color: [255, 0, 0, 1]
+          try {
+            const vertices = event.vertices;
+            self.mapView.graphics.removeAll();
+  
+            let pointFirst = {
+              geometry: {
+                type: "point", // autocasts as new Point()
+                longitude: webMercatorUtils.xyToLngLat( event.vertices[ 0 ][0], event.vertices[ 0 ][1] )[0],
+                latitude: webMercatorUtils.xyToLngLat( event.vertices[ 0 ][0], event.vertices[ 0 ][1] )[1]
+              }
+            };
+  
+            let pointLast = {
+              geometry: {
+                type: "point", // autocasts as new Point()
+                longitude: webMercatorUtils.xyToLngLat( event.vertices[ event.vertices.length - 1 ][0], event.vertices[ event.vertices.length - 1 ][1] )[0],
+                latitude: webMercatorUtils.xyToLngLat( event.vertices[ event.vertices.length - 1 ][0], event.vertices[ event.vertices.length - 1 ][1] )[1]
+              }
+            };
+  
+            let graphicStart = self.selectPoint( pointFirst );
+  
+            let graphicFinish = self.selectPoint( pointLast );
+  
+            // a graphic representing the polyline that is being drawn
+            const graphic = new Graphic({
+              geometry: {
+                type: "polyline",
+                paths: vertices,
+                spatialReference: self.mapView.spatialReference
+              }, symbol: {
+                type: "simple-line",
+                style: "short-dash",
+                width: 1.75,
+                color: [255, 0, 0, 1]
+              }
+            });
+  
+            // check if the polyline intersects itself.
+            const intersectingSegment = getIntersectingSegment(graphic.geometry);
+            // Add a new graphic for the intersecting segment.
+            if (intersectingSegment) {
+              self.mapView.graphics.addMany([graphic, intersectingSegment, graphicStart, graphicFinish]);
+            }
+            // Just add the graphic representing the polyline if no intersection
+            else {
+              self.mapView.graphics.addMany([graphic, graphicStart, graphicFinish]);
+            }
+  
+            // return intersectingSegment
+            return {
+              selfIntersects: intersectingSegment
+            };
+  
+          } catch (error) {
+            console.log( 'Error on createGraphic: ', error );
           }
-          });
-
-          // check if the polyline intersects itself.
-          const intersectingSegment = getIntersectingSegment(graphic.geometry);
-
-          // Add a new graphic for the intersecting segment.
-          if (intersectingSegment) {
-            self.mapView.graphics.addMany([graphic, intersectingSegment]);
-          }
-          // Just add the graphic representing the polyline if no intersection
-          else {
-            self.mapView.graphics.add(graphic);
-          }
-
-          // return intersectingSegment
-          return {
-            selfIntersects: intersectingSegment
-          };
         }
 
         // Checks if the last vertex is making the line intersect itself.
-        function updateVertices(event) {
+        async function updateVertices(event) {
           // create a polyline from returned vertices
-          if (event.vertices.length > 1) {
+          // if (event.vertices.length - 1 > 1) {
             const result = createGraphic(event);
 
             // if the last vertex is making the line intersects itself,
@@ -530,16 +626,47 @@ export class EsriMapComponent implements OnInit {
             if (result.selfIntersects) {
               event.preventDefault();
             }
-          }
+          // }
 
         }
 
+        async function addVordex( event ) {
+          let pointFirst = {
+            geometry: {
+              type: "point", // autocasts as new Point()
+              longitude: webMercatorUtils.xyToLngLat( event.vertices[ 0 ][0], event.vertices[ 0 ][1] )[0],
+              latitude: webMercatorUtils.xyToLngLat( event.vertices[ 0 ][0], event.vertices[ 0 ][1] )[1]
+            }
+          };
+
+          let pointLast = {
+            geometry: {
+              type: "point", // autocasts as new Point()
+              longitude: webMercatorUtils.xyToLngLat( event.vertices[ event.vertices.length - 1 ][0], event.vertices[ event.vertices.length - 1 ][1] )[0],
+              latitude: webMercatorUtils.xyToLngLat( event.vertices[ event.vertices.length - 1 ][0], event.vertices[ event.vertices.length - 1 ][1] )[1]
+            }
+          };
+
+          let closestPoint = await self.getConnectionPointInRadius( pointLast.geometry , 10);
+          
+          
+          if( closestPoint ){
+            event.vertices.pop();
+            
+            let positionXY = webMercatorUtils.lngLatToXY( closestPoint.geometry.x, closestPoint.geometry.y );
+
+            event.vertices.push( [ positionXY[0], positionXY[1] ] );
+            updateVertices( event );
+            draw.complete();
+            return;
+          }
+
+          updateVertices( event );
+
+        }
 
         async function stopDrawing( event ) {
           try {
-            console.log('dai batae');
-            console.log( event );
-  
             const graphic = new Graphic({
               geometry: {
                 type: "polyline",
@@ -548,9 +675,10 @@ export class EsriMapComponent implements OnInit {
               }
             });
 
-            let lenght = await geometryEngine.geodesicLength( graphic.geometry, 9001);
-  
-            console.log( lenght );            
+            let lenght =  await self.getDistance( event.vertices ); /*await geometryEngine.geodesicLength( graphic.geometry, 9001);*/
+
+            document.getElementById( 'availabilityWidget' ).innerHTML = `Distanta: ${lenght.toFixed(3)} m`;
+         
           } catch (error) {
             console.log( 'On complite event error: ', error );
           }
@@ -558,17 +686,11 @@ export class EsriMapComponent implements OnInit {
 
         }
 
-        const draw = new Draw({
-          view: self.mapView
-        });
         const action = draw.create("polyline");
 
-        
         action.on( "draw-complete", stopDrawing );
 
-        action.on( "vertex-add", ()=>{
-
-        } );
+        action.on( "vertex-add", addVordex);
 
         action.on(
           [
@@ -597,16 +719,22 @@ export class EsriMapComponent implements OnInit {
           
           let selectedPoint = await this.selectBuilding( selectedBuilding.features[0] );
     
+          
           let closestPoint = await this.getClosestConnectionPoint( selectedPoint );
+
+          if( !closestPoint.hasOwnProperty( 'geometry' ) ) {
+            console.log('si cu geometria', closestPoint.geometry);
+            return;
+          }
 
           await this.selectPoint( closestPoint );
 
-          if( !closestPoint.hasOwnProperty( 'geometry' ) )
-            return;
 
           await this.drawLine( selectedPoint, closestPoint.geometry );
 
-          let distance = geometryEngine.distance(selectedPoint, closestPoint.geometry , 9001);
+          // let distance = geometryEngine.distance(selectedPoint, closestPoint.geometry , 9001);
+
+          let distance = await this.getDistance([[selectedPoint.x, selectedPoint.y], [closestPoint.geometry.x, closestPoint.geometry.y]]);
 
           document.getElementById( 'availabilityWidget' ).innerHTML = `Distanta: ${distance.toFixed(3)} m`;
 
