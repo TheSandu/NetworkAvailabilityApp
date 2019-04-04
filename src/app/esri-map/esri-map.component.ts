@@ -20,6 +20,13 @@ let webMercatorUtils: any;
 let geometryEngine: any;
 let watchUtils: any;
 
+let opticalFiberPrice = 0.01;
+let opticalFiberServiceOffset = 3000;
+let opticalAmplifierPrice = 350;
+
+let utpPrice = 6;
+let utpServiceOffset = 100;
+
 @Component({
   selector: 'app-esri-map',
   templateUrl: './esri-map.component.html',
@@ -65,6 +72,31 @@ export class EsriMapComponent implements OnInit {
     }
   }
 
+  async messages( lenght ) {            
+    let message;
+    if( lenght < utpServiceOffset ) {
+        message = `
+        <div style='display: inline'><div style='font-weight: bold;'> Accessibility: </div> Este posibila trasarea cablu UTP </div>
+        <hr><div style='display: inline'><div style='font-weight: bold;'> Distanta: </div>${ lenght.toFixed(3) } m </div>
+        <hr><div style='display: inline'><div style='font-weight: bold;'>Pret UTP: </div>${ lenght.toFixed(3) * utpPrice } lei </div>
+        <hr><div style='display: inline'><div style='font-weight: bold;'>Pret FO: </div>${ lenght.toFixed(3) * opticalFiberPrice } lei </div>
+      `;
+    } else if( lenght > utpServiceOffset && lenght < opticalFiberServiceOffset ){
+      message = `
+        <div style='display: inline'><div style='font-weight: bold;'> Accessibility: </div> Nu este posibila trasarea cablului UTP direct la client, se recomanda trasarea cablului obtic </div></div>
+        <hr><div style='display: inline'><div style='font-weight: bold;'>Distanta: </div> ${ lenght.toFixed(3) } m</div>
+        <hr><div style='display: inline'><div style='font-weight: bold;'> Pret: </div> ${ lenght.toFixed(3) * opticalFiberPrice } lei</div>
+      `;
+    } else if( lenght > opticalFiberServiceOffset ) {
+      let amplifierCout = lenght.toFixed(3) / opticalFiberServiceOffset;
+      message = `
+        <div style='display: inline'><div style='font-weight: bold;'> Accessibility: </div>Pentru trasare este nevoie de amplificator</div>
+        <hr><div style='display: inline'><div style='font-weight: bold;'> Distanta: </div> ${ lenght.toFixed(3) } m</div>
+        <hr><div style='display: inline'><div style='font-weight: bold;'> Pret: </div> ${ lenght.toFixed(3)  * opticalFiberPrice } + ${ parseInt(amplifierCout.toFixed()) * opticalAmplifierPrice } lei <br>( Cablul + Amplificato )</div>
+      `;
+    }
+    return message;
+  }
 
   // function that checks if the line intersects itself
   async isSelfIntersecting(polyline) {
@@ -446,8 +478,8 @@ export class EsriMapComponent implements OnInit {
       // Availability widget
       const availabilityWidget: Widget = new  Widget({
         text: '<div><div id=\'availabilityWidget\'></div><input id=\'drawLine\' type=\'button\' value=\'FreeHand Button\'></div>',
-        height: '500px',
-        width: '250px',
+        height: '250px',
+        width: '500px',
         padding: '10px',
         margin: '0px',
       });
@@ -497,7 +529,7 @@ export class EsriMapComponent implements OnInit {
       // draw polyline button
       document.getElementById("drawLine").onclick = function() {
         self.mapView.graphics.removeAll();
-
+        document.getElementById( 'availabilityWidget' ).innerHTML = '';
 
         // Get the last segment of the polyline that is being drawn
         function getLastSegment(polyline) {
@@ -675,9 +707,9 @@ export class EsriMapComponent implements OnInit {
               }
             });
 
-            let lenght =  await self.getDistance( event.vertices ); /*await geometryEngine.geodesicLength( graphic.geometry, 9001);*/
+            let lenght =  await self.getDistance( event.vertices ); /* await geometryEngine.geodesicLength( graphic.geometry, 9001); */
 
-            document.getElementById( 'availabilityWidget' ).innerHTML = `Distanta: ${lenght.toFixed(3)} m`;
+            document.getElementById( 'availabilityWidget' ).innerHTML = await self.messages( lenght );
          
           } catch (error) {
             console.log( 'On complite event error: ', error );
@@ -734,9 +766,9 @@ export class EsriMapComponent implements OnInit {
 
           // let distance = geometryEngine.distance(selectedPoint, closestPoint.geometry , 9001);
 
-          let distance = await this.getDistance([[selectedPoint.x, selectedPoint.y], [closestPoint.geometry.x, closestPoint.geometry.y]]);
+          let lenght = await this.getDistance([[selectedPoint.x, selectedPoint.y], [closestPoint.geometry.x, closestPoint.geometry.y]]);
 
-          document.getElementById( 'availabilityWidget' ).innerHTML = `Distanta: ${distance.toFixed(3)} m`;
+          document.getElementById( 'availabilityWidget' ).innerHTML = await this.messages( lenght );
 
           if ( !this.availabilityExpandWidget.expanded )
             this.availabilityExpandWidget.expand();
