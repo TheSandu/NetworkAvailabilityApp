@@ -6,3 +6,12 @@ html, body{
     padding: 0px;
     margin: 0px;
 }
+
+
+.s-form{
+    width: 100%;
+}
+
+.s-form > input{
+    width: 100%;
+}

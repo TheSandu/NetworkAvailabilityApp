@@ -6,7 +6,7 @@ import { Widget } from './esri-widget.class';
 
 import { NetworkAvailabilityService } from './services/NetworkAvailabilityService';
 
-var test = new NetworkAvailabilityService();
+var netAbilityService = new NetworkAvailabilityService();
 
 import { ActivatedRouteSnapshot } from '@angular/router';
 
@@ -212,6 +212,7 @@ export class EsriMapComponent implements OnInit {
     });
 
     let lenght = await geometryEngine.geodesicLength( graphic.geometry, 9001);
+    console.log( 'dlina', lenght );
     return lenght;
   }
 
@@ -239,29 +240,56 @@ export class EsriMapComponent implements OnInit {
   }
 
   // ******** MESAGE
+
+  async form() {
+    let form = `
+      <div class="s-form">
+        <input type="text" class="esri-input esri-feature-form__input" id='name' placeholder="Numele Prenumele"><br>
+        <input type="text" class="esri-input esri-feature-form__input" id='phone' placeholder="Numarul de telefon"><br>
+        <button class="esri-button" id="saveReport"> Save </button>
+      <div>`;
+
+    return form;
+  }
+
   async messages( lenght ) {
-    let message;
+    let message = {
+      html: '',
+      text: '',
+      price: 0,
+    };
     if( lenght < utpServiceOffset ) {
-        message = `
+        message.text = 'Este posibila trasarea cablu UTP';
+        message.html = `
         <div style='display: inline'><div style='font-weight: bold;'> Accessibility: </div> Este posibila trasarea cablu UTP </div>
         <hr><div style='display: inline'><div style='font-weight: bold;'> Distanta: </div>${ lenght.toFixed(3) } m </div>
         <hr><div style='display: inline'><div style='font-weight: bold;'>Pret UTP: </div>${ lenght.toFixed(3) * utpPrice } lei </div>
         <hr><div style='display: inline'><div style='font-weight: bold;'>Pret FO: </div>${ lenght.toFixed(3) * opticalFiberPrice } lei </div>
       `;
+      message.price = lenght.toFixed(3) * opticalFiberPrice;
+
     } else if( lenght > utpServiceOffset && lenght < opticalFiberServiceOffset ){
-      message = `
+      message.text = 'Nu este posibila trasarea cablului UTP direct la client, se recomanda trasarea cablului optic';
+      message.html = `
         <div style='display: inline'><div style='font-weight: bold;'> Accessibility: </div> Nu este posibila trasarea cablului UTP direct la client, se recomanda trasarea cablului optic </div></div>
         <hr><div style='display: inline'><div style='font-weight: bold;'>Distanta: </div> ${ lenght.toFixed(3) } m</div>
         <hr><div style='display: inline'><div style='font-weight: bold;'> Pret: </div> ${ lenght.toFixed(3) * opticalFiberPrice } lei</div>
       `;
+      message.price = lenght.toFixed(3) * opticalFiberPrice;
+
     } else if( lenght > opticalFiberServiceOffset ) {
       let amplifierCout = lenght.toFixed(3) / opticalFiberServiceOffset;
-      message = `
+      message.text = 'Pentru trasare este nevoie de amplificator';
+      message.html = `
         <div style='display: inline'><div style='font-weight: bold;'> Accessibility: </div>Pentru trasare este nevoie de amplificator</div>
         <hr><div style='display: inline'><div style='font-weight: bold;'> Distanta: </div> ${ lenght.toFixed(3) } m</div>
         <hr><div style='display: inline'><div style='font-weight: bold;'> Pret: </div> ${ lenght.toFixed(3)  * opticalFiberPrice } + ${ parseInt(amplifierCout.toFixed()) * opticalAmplifierPrice } lei <br>( Cablul + Amplificato )</div>
       `;
+      let price = lenght.toFixed(3) * opticalFiberPrice + parseInt(amplifierCout.toFixed()) * opticalAmplifierPrice;
+      message.price = parseInt(price.toFixed(3));
+
     }
+
     return message;
   }
   // ***************************************** GET ******************************
@@ -278,8 +306,8 @@ export class EsriMapComponent implements OnInit {
   // ******** INITIAL LOAD
   async init() {
     try {
-      ConnectionPoints = await test.getConnectioins();
-      Buildings = await test.getBuildings();
+      ConnectionPoints = await netAbilityService.getConnectioins();
+      Buildings = await netAbilityService.getBuildings();
 
       
       // Load modules from loadModules Promise
@@ -499,8 +527,8 @@ export class EsriMapComponent implements OnInit {
       
       // Availability widget
       const availabilityWidget: Widget = new  Widget({
-        text: '<div><div id=\'availabilityWidget\'></div><input id=\'drawLine\' type=\'button\' value=\'FreeHand Button\'></div>',
-        height: '300px',
+        text: '<div><div id=\'availabilityWidget\'></div></div>',
+        height: '320px',
         width: '500px',
         padding: '10px',
         margin: '0px',
@@ -512,6 +540,7 @@ export class EsriMapComponent implements OnInit {
         view: this.mapView,
       });
 
+      await this.mapView.ui.add("line-button", "top-left");
       
       // Add widgets to MapView Interface
       await this.mapView.ui.add([{
@@ -533,6 +562,7 @@ export class EsriMapComponent implements OnInit {
         }
       ]);
       
+
       let draw = new Draw({
         view: this.mapView,
       });
@@ -549,11 +579,14 @@ export class EsriMapComponent implements OnInit {
       });
 
       // draw polyline button
-      document.getElementById("drawLine").onclick = async function() {
+      document.getElementById("line-button").onclick = async function() {
         self.mapView.graphics.removeAll();
-          
-        await self.selectBuilding( self.selectedBuilding );
-        await self.selectPoint( self.closestPointFromSelectedBuilding );
+        
+        if( self.selectedBuilding )
+          await self.selectBuilding( self.selectedBuilding );
+        
+        if( self.selectedBuilding )        
+          await self.selectPoint( self.closestPointFromSelectedBuilding );
 
         document.getElementById( 'availabilityWidget' ).innerHTML = '';
 
@@ -657,14 +690,20 @@ export class EsriMapComponent implements OnInit {
             // Add a new graphic for the intersecting segment.
             if (intersectingSegment) {
               self.mapView.graphics.addMany([graphic, intersectingSegment, graphicStart, graphicFinish]);
-              await self.selectBuilding( self.selectedBuilding );
-              await self.selectPoint( self.closestPointFromSelectedBuilding );
+              
+              if( self.selectedBuilding )
+                await self.selectBuilding( self.selectedBuilding );
+              if( self.closestPointFromSelectedBuilding )
+                await self.selectPoint( self.closestPointFromSelectedBuilding );
             }
             // Just add the graphic representing the polyline if no intersection
             else {
-              await self.selectBuilding( self.selectedBuilding );
-              await self.selectPoint( self.closestPointFromSelectedBuilding );
-              self.mapView.graphics.addMany([graphic, graphicStart, graphicFinish]);
+              if( self.selectedBuilding )
+                await self.selectBuilding( self.selectedBuilding );
+              if( self.closestPointFromSelectedBuilding )
+                await self.selectPoint( self.closestPointFromSelectedBuilding );
+              
+                self.mapView.graphics.addMany([graphic, graphicStart, graphicFinish]);
             }
   
             // return intersectingSegment
@@ -739,7 +778,29 @@ export class EsriMapComponent implements OnInit {
 
             let lenght =  await self.getDistance( event.vertices ); /* await geometryEngine.geodesicLength( graphic.geometry, 9001); */
 
-            document.getElementById( 'availabilityWidget' ).innerHTML = await self.messages( lenght );
+            let message = await self.messages( lenght );
+
+            document.getElementById( 'availabilityWidget' ).innerHTML = message.html + await self.form();
+            
+            if ( !self.availabilityExpandWidget.expanded )
+              self.availabilityExpandWidget.expand();
+
+            document.getElementById('saveReport').onclick = async () => {
+
+              //@ts-ignore
+              let name = document.getElementById('name').value;
+              //@ts-ignore
+              let phone = document.getElementById('phone').value;
+              
+              
+              let reportRespons: string = await netAbilityService.sendReport( name, phone , lenght, message.text, message.price );
+              console.log( reportRespons );
+              
+              let reportLogs: string = await netAbilityService.sendLog( event.vertices, Date.now() );
+              console.log( reportLogs );
+            };
+
+            // await self.saveRecord( graphic );
          
           } catch (error) {
             console.log( 'On complite event error: ', error );
@@ -801,7 +862,8 @@ export class EsriMapComponent implements OnInit {
 
           let lenght = await this.getDistance([[selectedPoint.x, selectedPoint.y], [closestPoint.geometry.x, closestPoint.geometry.y]]);
 
-          document.getElementById( 'availabilityWidget' ).innerHTML = await this.messages( lenght );
+          let message = await this.messages( lenght );
+          document.getElementById( 'availabilityWidget' ).innerHTML = message.html;
 
           if ( !this.availabilityExpandWidget.expanded )
             this.availabilityExpandWidget.expand();
