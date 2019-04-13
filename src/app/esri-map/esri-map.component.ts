@@ -1,9 +1,17 @@
 import { Component, OnInit, ViewChild, ElementRef } from '@angular/core';
 import { loadModules } from 'esri-loader';
 import { Widget } from './esri-widget.class';
-import ConnectionPoints from './layers/conection-points.data.json';
-import Buildings from './layers/Chisinau_buildings.json';
+// import ConnectionPoints from './layers/conection-points.data.json';
+// import Buildings from './layers/Chisinau_buildings.json';
+
+import { NetworkAvailabilityService } from './services/NetworkAvailabilityService';
+
+var test = new NetworkAvailabilityService();
+
 import { ActivatedRouteSnapshot } from '@angular/router';
+
+let ConnectionPoints: any;
+let Buildings: any;
 
 let EsriMap: any;
 let EsriMapView: any;
@@ -11,7 +19,7 @@ let Expand: any;
 let BasemapGallery: any;
 let Search: any;
 let Graphic: any;
-let Legend: any;
+let LayerList: any;
 let FeatureLayer: any;
 let Polygon: any;
 let Polyline: any;
@@ -19,13 +27,14 @@ let Draw: any;
 let webMercatorUtils: any;
 let geometryEngine: any;
 let watchUtils: any;
+let GraphicsLayer: any;
 
-let opticalFiberPrice = 0.01;
-let opticalFiberServiceOffset = 3000;
-let opticalAmplifierPrice = 350;
+let opticalFiberPrice = 12; // MDL
+let opticalFiberServiceOffset = 3000; // meters
+let opticalAmplifierPrice = 348; // MDL
 
-let utpPrice = 6;
-let utpServiceOffset = 100;
+let utpPrice = 8; // MDL
+let utpServiceOffset = 100; // meters
 
 @Component({
   selector: 'app-esri-map',
@@ -40,11 +49,21 @@ export class EsriMapComponent implements OnInit {
   private buildingsLayer: any;
   private map: any;
   private mapView: any;
-  private selectedGraphicLayer: any;
+  private selectedBuilding: any;
+  private closestPointFromSelectedBuilding: any;
   private availabilityExpandWidget: any;
 
   constructor() { }
 
+
+
+
+
+
+
+  // ***************************************** SET LAYERS ***********************
+
+  // ********* SET BUILDING LAYER 
   async setGraphicToCBuildingsLayer() {
     try {
 
@@ -72,84 +91,7 @@ export class EsriMapComponent implements OnInit {
     }
   }
 
-  async messages( lenght ) {            
-    let message;
-    if( lenght < utpServiceOffset ) {
-        message = `
-        <div style='display: inline'><div style='font-weight: bold;'> Accessibility: </div> Este posibila trasarea cablu UTP </div>
-        <hr><div style='display: inline'><div style='font-weight: bold;'> Distanta: </div>${ lenght.toFixed(3) } m </div>
-        <hr><div style='display: inline'><div style='font-weight: bold;'>Pret UTP: </div>${ lenght.toFixed(3) * utpPrice } lei </div>
-        <hr><div style='display: inline'><div style='font-weight: bold;'>Pret FO: </div>${ lenght.toFixed(3) * opticalFiberPrice } lei </div>
-      `;
-    } else if( lenght > utpServiceOffset && lenght < opticalFiberServiceOffset ){
-      message = `
-        <div style='display: inline'><div style='font-weight: bold;'> Accessibility: </div> Nu este posibila trasarea cablului UTP direct la client, se recomanda trasarea cablului obtic </div></div>
-        <hr><div style='display: inline'><div style='font-weight: bold;'>Distanta: </div> ${ lenght.toFixed(3) } m</div>
-        <hr><div style='display: inline'><div style='font-weight: bold;'> Pret: </div> ${ lenght.toFixed(3) * opticalFiberPrice } lei</div>
-      `;
-    } else if( lenght > opticalFiberServiceOffset ) {
-      let amplifierCout = lenght.toFixed(3) / opticalFiberServiceOffset;
-      message = `
-        <div style='display: inline'><div style='font-weight: bold;'> Accessibility: </div>Pentru trasare este nevoie de amplificator</div>
-        <hr><div style='display: inline'><div style='font-weight: bold;'> Distanta: </div> ${ lenght.toFixed(3) } m</div>
-        <hr><div style='display: inline'><div style='font-weight: bold;'> Pret: </div> ${ lenght.toFixed(3)  * opticalFiberPrice } + ${ parseInt(amplifierCout.toFixed()) * opticalAmplifierPrice } lei <br>( Cablul + Amplificato )</div>
-      `;
-    }
-    return message;
-  }
-
-  // function that checks if the line intersects itself
-  async isSelfIntersecting(polyline) {
-    if (polyline.paths[0].length < 3) {
-      return false
-    }
-    const line = polyline.clone();
-
-    //get the last segment from the polyline that is being drawn
-    const lastSegment = this.getLastSegment(polyline);
-    line.removePoint(0, line.paths[0].length - 1);
-
-    // returns true if the line intersects itself, false otherwise
-    return geometryEngine.crosses(lastSegment, line);
-  }
-
-  // Checks if the line intersects itself. If yes, change the last
-  // segment's symbol giving a visual feedback to the user.
-  async getIntersectingSegment(polyline) {
-    if (this.isSelfIntersecting(polyline)) {
-      return new Graphic({
-        geometry: this.getLastSegment(polyline),
-        symbol: {
-          type: "simple-line", // autocasts as new SimpleLineSymbol
-          style: "short-dot",
-          width: 3.5,
-          color: "yellow"
-        }
-      });
-    }
-    return null;
-  }
-
-  // Get the last segment of the polyline that is being drawn
-  async getLastSegment(polyline) {
-    const line = polyline.clone();
-    const lastXYPoint = line.removePoint(0, line.paths[0].length - 1);
-    const existingLineFinalPoint = line.getPoint(0, line.paths[0].length -
-      1);
-
-    return {
-      type: "polyline",
-      spatialReference: this.mapView.spatialReference,
-      hasZ: false,
-      paths: [
-        [
-          [existingLineFinalPoint.x, existingLineFinalPoint.y],
-          [lastXYPoint.x, lastXYPoint.y]
-        ]
-      ]
-    };
-  }
-
+  // ************ CONNECTION POINTS LAYER
   async setGraphicToConectionPointsLayer(  ) {
     try {
       let features = [];
@@ -184,6 +126,7 @@ export class EsriMapComponent implements OnInit {
       }; 
 
       this.conectionPointsLayer = new FeatureLayer({
+        title: 'Connection Points Layer',
         source: features,
         objectIdField: "ObjectID",
         renderer: {
@@ -199,8 +142,146 @@ export class EsriMapComponent implements OnInit {
     }
   }
 
+  // ***************************************** SET LAYERS ***********************
+
+
+
+
+
+
+  // ***************************************** GET ******************************
+
+  // ******** GET CONNECTION POINT IN RADIUS
+  async getConnectionPointInRadius( centroid, diamentru ) {
+    try {
+
+      if ( !centroid )
+        return;
+
+      let closestConnectionPoint: any;
+    
+      let query = this.conectionPointsLayer.createQuery();
+      query.geometry = centroid;
+      query.distance = diamentru;
+      
+      closestConnectionPoint = await this.conectionPointsLayer.queryFeatures( query );
+
+      return closestConnectionPoint.features.lenght !== 0 && closestConnectionPoint.features[0];
+
+    } catch (error) {
+      console.log(`Map::getConnectionPointInRadius error from esri-map.component.ts: ${error}`);
+    }
+  }
+
+  // ************* GET CLOSEST CONNECTION POINT
+  async getClosestConnectionPoint( centroid ) {
+    try {
+
+      if ( !centroid )
+        return;
+
+      let closestConnectionPoint: any;
+      let diamentru = 0;
+  
+      while( !closestConnectionPoint ) {
+        diamentru += 10;
+  
+        let query = this.conectionPointsLayer.createQuery();
+        query.geometry = centroid;
+        query.distance = diamentru;
+
+        let closestConnectionPointSet = await this.conectionPointsLayer.queryFeatures( query );
+        closestConnectionPoint = closestConnectionPointSet.features[0];
+      }
+      return closestConnectionPoint;
+
+    } catch (error) {
+      console.log(`Map::getClosestConnectionPoint error from esri-map.component.ts: ${error}`);
+    }
+  }
+
+  // *************** GET GEODESIC DISTANCE METERS
+  async getDistance( vertices ) {
+
+    const graphic = new Graphic({
+      geometry: {
+        type: "polyline",
+        paths: vertices,
+        spatialReference: this.mapView.spatialReference
+      }
+    });
+
+    let lenght = await geometryEngine.geodesicLength( graphic.geometry, 9001);
+    return lenght;
+  }
+
+  // ********** GET SELECTED POINT
+  async selectPoint( point ) {
+
+    try {
+      let graphic = new Graphic({
+        geometry: point.geometry,
+        symbol: {
+          type: "simple-marker", // autocasts as new SimpleMarkerSymbol()
+          color: [226, 119, 40],
+          outline: { // autocasts as new SimpleLineSymbol()
+            color: [0, 255, 0],
+            width: 2
+          }
+        },
+      });
+      this.mapView.graphics.add( graphic );
+  
+      return graphic;
+    } catch (error) {
+      console.log(`Map::selectPoint error from esri-map.component.ts: ${error}`);
+    }
+  }
+
+  // ******** MESAGE
+  async messages( lenght ) {
+    let message;
+    if( lenght < utpServiceOffset ) {
+        message = `
+        <div style='display: inline'><div style='font-weight: bold;'> Accessibility: </div> Este posibila trasarea cablu UTP </div>
+        <hr><div style='display: inline'><div style='font-weight: bold;'> Distanta: </div>${ lenght.toFixed(3) } m </div>
+        <hr><div style='display: inline'><div style='font-weight: bold;'>Pret UTP: </div>${ lenght.toFixed(3) * utpPrice } lei </div>
+        <hr><div style='display: inline'><div style='font-weight: bold;'>Pret FO: </div>${ lenght.toFixed(3) * opticalFiberPrice } lei </div>
+      `;
+    } else if( lenght > utpServiceOffset && lenght < opticalFiberServiceOffset ){
+      message = `
+        <div style='display: inline'><div style='font-weight: bold;'> Accessibility: </div> Nu este posibila trasarea cablului UTP direct la client, se recomanda trasarea cablului optic </div></div>
+        <hr><div style='display: inline'><div style='font-weight: bold;'>Distanta: </div> ${ lenght.toFixed(3) } m</div>
+        <hr><div style='display: inline'><div style='font-weight: bold;'> Pret: </div> ${ lenght.toFixed(3) * opticalFiberPrice } lei</div>
+      `;
+    } else if( lenght > opticalFiberServiceOffset ) {
+      let amplifierCout = lenght.toFixed(3) / opticalFiberServiceOffset;
+      message = `
+        <div style='display: inline'><div style='font-weight: bold;'> Accessibility: </div>Pentru trasare este nevoie de amplificator</div>
+        <hr><div style='display: inline'><div style='font-weight: bold;'> Distanta: </div> ${ lenght.toFixed(3) } m</div>
+        <hr><div style='display: inline'><div style='font-weight: bold;'> Pret: </div> ${ lenght.toFixed(3)  * opticalFiberPrice } + ${ parseInt(amplifierCout.toFixed()) * opticalAmplifierPrice } lei <br>( Cablul + Amplificato )</div>
+      `;
+    }
+    return message;
+  }
+  // ***************************************** GET ******************************
+  
+  
+
+
+  
+  
+
+
+  
+  // *************** LOAD MODULES
+  // ******** INITIAL LOAD
   async init() {
     try {
+      ConnectionPoints = await test.getConnectioins();
+      Buildings = await test.getBuildings();
+
+      
       // Load modules from loadModules Promise
       [EsriMap] = await loadModules(['esri/Map']);
       [Graphic] = await loadModules(['esri/Graphic']);
@@ -211,6 +292,7 @@ export class EsriMapComponent implements OnInit {
       [Draw] = await loadModules(['esri/views/2d/draw/Draw']);
     
       [FeatureLayer] = await loadModules(['esri/layers/FeatureLayer']);
+      [GraphicsLayer] = await loadModules(['esri/layers/GraphicsLayer']);
     
       [Polygon] = await loadModules(['esri/geometry/Polygon']);
       [Polyline] = await loadModules(['esri/geometry/Polyline']);
@@ -220,14 +302,26 @@ export class EsriMapComponent implements OnInit {
     
       [Search] = await loadModules(['esri/widgets/Search']);
       [Expand] = await loadModules(['esri/widgets/Expand']);
-      [Legend] = await loadModules(["esri/widgets/Legend"]);
-
+      [LayerList] = await loadModules(["esri/widgets/LayerList"]);
 
     } catch (error) {
       console.log(`Map::init error from esri-map.component.ts: ${error}`);
     }
   }
 
+
+  // *************** LOAD MODULES
+
+
+
+
+
+
+
+
+  // ******************************** DRAW *********************************
+
+  // ***** Draw polygon
   async selectBuilding( feature ) {
     try {
       if( !feature.hasOwnProperty( 'geometry' ) ) 
@@ -269,7 +363,7 @@ export class EsriMapComponent implements OnInit {
     }
   }
 
-
+  // ***** Draw polyline
   async drawPolyline( vertices: Array<any> ) {
     try {
 
@@ -296,6 +390,8 @@ export class EsriMapComponent implements OnInit {
       console.log(`Map::drawPolyline error from esri-map.component.ts: ${error}`);
     }
   }
+  
+  // ***** Draw line
   async drawLine( firstPoint: any, secondPoint: any ) {
     try {
       if( !firstPoint.x || !firstPoint.y || !secondPoint.x || !secondPoint.y ) {
@@ -308,7 +404,7 @@ export class EsriMapComponent implements OnInit {
           [ webMercatorUtils.xyToLngLat( firstPoint.x, firstPoint.y )[0], webMercatorUtils.xyToLngLat( firstPoint.x, firstPoint.y )[1] ],
           [ webMercatorUtils.xyToLngLat( secondPoint.x, secondPoint.y )[0], webMercatorUtils.xyToLngLat( secondPoint.x, secondPoint.y )[1] ],
         ];
-
+        
       let line = new Polyline({
         paths: paths,
       });
@@ -330,89 +426,19 @@ export class EsriMapComponent implements OnInit {
     }
   }
 
-  async getDistance( vertices ) {
+  // ******************************** DRAW *********************************
 
-    const graphic = new Graphic({
-      geometry: {
-        type: "polyline",
-        paths: vertices,
-        spatialReference: this.mapView.spatialReference
-      }
-    });
 
-    let lenght = await geometryEngine.geodesicLength( graphic.geometry, 9001);
-    return lenght;
-  }
 
-  async selectPoint( point ) {
 
-    try {
-      let graphic = new Graphic({
-        geometry: point.geometry,
-        symbol: {
-          type: "simple-marker", // autocasts as new SimpleMarkerSymbol()
-          color: [226, 119, 40],
-          outline: { // autocasts as new SimpleLineSymbol()
-            color: [0, 255, 0],
-            width: 2
-          }
-        },
-      });
-  
-      this.mapView.graphics.add( graphic );
-  
-      return graphic;
-    } catch (error) {
-      console.log(`Map::selectPoint error from esri-map.component.ts: ${error}`);
-    }
-  }
 
-  async getConnectionPointInRadius( centroid, diamentru ) {
-    try {
 
-      if ( !centroid )
-        return;
 
-      let closestConnectionPoint: any;
-    
-      let query = this.conectionPointsLayer.createQuery();
-      query.geometry = centroid;
-      query.distance = diamentru;
-      
-      closestConnectionPoint = await this.conectionPointsLayer.queryFeatures( query );
 
-      return closestConnectionPoint.features.lenght !== 0 && closestConnectionPoint.features[0];
 
-    } catch (error) {
-      console.log(`Map::getConnectionPointInRadius error from esri-map.component.ts: ${error}`);
-    }
-  }
 
-  async getClosestConnectionPoint( centroid ) {
-    try {
 
-      if ( !centroid )
-        return;
 
-      let closestConnectionPoint: any;
-      let diamentru = 0;
-  
-      while( !closestConnectionPoint ) {
-        diamentru += 10;
-  
-        let query = this.conectionPointsLayer.createQuery();
-        query.geometry = centroid;
-        query.distance = diamentru;
-
-        let closestConnectionPointSet = await this.conectionPointsLayer.queryFeatures( query );
-        closestConnectionPoint = closestConnectionPointSet.features[0];
-      }
-      return closestConnectionPoint;
-
-    } catch (error) {
-      console.log(`Map::getClosestConnectionPoint error from esri-map.component.ts: ${error}`);
-    }
-  }
 
   async clearMap() {
     this.mapView.graphics.removeAll();
@@ -420,9 +446,12 @@ export class EsriMapComponent implements OnInit {
 
   async ngOnInit() {
     try {
+
+
       await this.init();
       await this.setGraphicToConectionPointsLayer();
       await this.setGraphicToCBuildingsLayer();
+
       // Make Map, basemap openstreetmap
       this.map = new EsriMap({
         basemap: 'osm',
@@ -445,22 +474,15 @@ export class EsriMapComponent implements OnInit {
         view: this.mapView,
       });
 
-      // Create Legend widget
-
-      var legend = new Legend({
-        view: this.mapView,
-        layerInfos: [
-          {
-            layer: this.conectionPointsLayer,
-            title: "Puncte de conexiune"
-          }
-        ]
+      // Create LayerList widget
+      var layerList = new LayerList({
+        view: this.mapView
       });
 
-      // Create Expand for Legend
-      const legendExpand = new Expand({
+      // Create Expand for LayerList
+      const layerListExpand = new Expand({
         view: this.mapView,
-        content: legend,
+        content: layerList,
       });
 
       // Create Expand for BasemapGallary
@@ -478,7 +500,7 @@ export class EsriMapComponent implements OnInit {
       // Availability widget
       const availabilityWidget: Widget = new  Widget({
         text: '<div><div id=\'availabilityWidget\'></div><input id=\'drawLine\' type=\'button\' value=\'FreeHand Button\'></div>',
-        height: '250px',
+        height: '300px',
         width: '500px',
         padding: '10px',
         margin: '0px',
@@ -505,7 +527,7 @@ export class EsriMapComponent implements OnInit {
           position: "top-right",
           index: 1,  
         },{
-          component: legendExpand,
+          component: layerListExpand,
           position: "bottom-left",
           index: 0,
         }
@@ -517,7 +539,7 @@ export class EsriMapComponent implements OnInit {
 
       let self = this;
       
-      watchUtils.whenFalse( this.availabilityExpandWidget, 'expanded', ()=>{
+      watchUtils.whenFalse( this.availabilityExpandWidget, 'expanded', () => {
         try {
           draw.complete();
           self.mapView.graphics.removeAll();
@@ -527,8 +549,12 @@ export class EsriMapComponent implements OnInit {
       });
 
       // draw polyline button
-      document.getElementById("drawLine").onclick = function() {
+      document.getElementById("drawLine").onclick = async function() {
         self.mapView.graphics.removeAll();
+          
+        await self.selectBuilding( self.selectedBuilding );
+        await self.selectPoint( self.closestPointFromSelectedBuilding );
+
         document.getElementById( 'availabilityWidget' ).innerHTML = '';
 
         // Get the last segment of the polyline that is being drawn
@@ -587,7 +613,7 @@ export class EsriMapComponent implements OnInit {
 
 
         // create a new graphic presenting the polyline that is being drawn on the view
-        function createGraphic(event) {
+        async function createGraphic(event) {
           try {
             const vertices = event.vertices;
             self.mapView.graphics.removeAll();
@@ -631,9 +657,13 @@ export class EsriMapComponent implements OnInit {
             // Add a new graphic for the intersecting segment.
             if (intersectingSegment) {
               self.mapView.graphics.addMany([graphic, intersectingSegment, graphicStart, graphicFinish]);
+              await self.selectBuilding( self.selectedBuilding );
+              await self.selectPoint( self.closestPointFromSelectedBuilding );
             }
             // Just add the graphic representing the polyline if no intersection
             else {
+              await self.selectBuilding( self.selectedBuilding );
+              await self.selectPoint( self.closestPointFromSelectedBuilding );
               self.mapView.graphics.addMany([graphic, graphicStart, graphicFinish]);
             }
   
@@ -651,7 +681,7 @@ export class EsriMapComponent implements OnInit {
         async function updateVertices(event) {
           // create a polyline from returned vertices
           // if (event.vertices.length - 1 > 1) {
-            const result = createGraphic(event);
+            const result = await createGraphic(event);
 
             // if the last vertex is making the line intersects itself,
             // prevent the events from firing
@@ -750,9 +780,12 @@ export class EsriMapComponent implements OnInit {
           this.clearMap();
           
           let selectedPoint = await this.selectBuilding( selectedBuilding.features[0] );
-    
+          
+          this.selectedBuilding = selectedBuilding.features[0];
           
           let closestPoint = await this.getClosestConnectionPoint( selectedPoint );
+
+          this.closestPointFromSelectedBuilding = closestPoint;
 
           if( !closestPoint.hasOwnProperty( 'geometry' ) ) {
             console.log('si cu geometria', closestPoint.geometry);
