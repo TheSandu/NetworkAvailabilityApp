@@ -13,7 +13,7 @@ export class NetworkAvailabilityService {
     }
 
     public async getBuildings(){
-        let res = await fetch('http://localhost:8080/api/buildings');
+        let res = await fetch('http://localhosthttp://localhost:8080/api/buildings:8080/api/buildings');
         let json = await res.json();
         return json;
     }

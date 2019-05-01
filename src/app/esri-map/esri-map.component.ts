@@ -67,22 +67,44 @@ export class EsriMapComponent implements OnInit {
   async setGraphicToCBuildingsLayer() {
     try {
 
-      let renderer = {
-        type: "simple",  // autocasts as new SimpleRenderer()
-        symbol: {
-          type: "simple-fill",  // autocasts as new SimpleFillSymbol()
+      var buildingsRenderer = {
+        type: "unique-value",
+        field: "connected",
+        defaultSymbol: {
+          type: "simple-fill",
           color: [ 255, 128, 0, 0.5 ],
-          outline: {  // autocasts as new SimpleLineSymbol()
+          outline: {
             width: 1,
             color: "black"
           }
-        }
+        },
+        uniqueValueInfos: [{
+          value: 0,
+          symbol: {
+            type: "simple-fill",
+            color: [ 255, 128, 0, 0.5 ],
+            outline: {
+              width: 3,
+              color: "red"
+            }
+          }
+        }, {
+          value: 1,
+          symbol: {
+            type: "simple-fill",
+            color: [ 255, 128, 0, 0.5 ],
+            outline: {
+              width: 3,
+              color: "blue"
+            }
+          },
+        }],
       };
 
       this.buildingsLayer = new FeatureLayer({
-        source: Buildings,
+        url:'https://info.iharta.md:6443/arcgis/rest/services/TEST/SanduTeza/FeatureServer/1',
         objectIdField: "FID",
-        renderer: renderer,
+        renderer: buildingsRenderer,
         geometryType: 'polygon',
       });
 
@@ -94,47 +116,41 @@ export class EsriMapComponent implements OnInit {
   // ************ CONNECTION POINTS LAYER
   async setGraphicToConectionPointsLayer(  ) {
     try {
-      let features = [];
 
-      for (let objId = 0; objId < ConnectionPoints.length; objId++) {
-        const element = ConnectionPoints[objId];
-        features.push({
-          geometry: {
-            type: "point",
-            x: webMercatorUtils.xyToLngLat( element.x, element.y )[0],
-            y: webMercatorUtils.xyToLngLat( element.x, element.y )[1],
-          },
-          attributes: {
-            ObjectID: objId,
+      var connectionsRenderer = {
+        type: "unique-value",
+        field: "connectionpointtype",
+        defaultSymbol: {
+          type: "simple-marker",
+          color: [ 255, 128, 0, 1 ],
+          outline: {
+            width: 1,
+            color: "black"
           }
-        });
-      }
-
-      let diamondSymbol = {
-        type: "simple-marker",  // autocasts as new SimpleMarkerSymbol()
-        style: "circle",
-        color: [ 255, 128, 45 ],  // autocasts as new Color()
-        outline: {              // autocasts as new SimpleLineSymbol()
-          color: [ 0, 0, 0 ] // Again, no need for specifying new Color()
-        }
+        },
+        uniqueValueInfos: [{
+          value: "Subteran",
+          symbol: {
+            type: "simple-marker",
+            color: [ 10, 10, 255, 1 ],
+          }
+        }, {
+          value: "Terestru",
+          symbol: {
+            type: "simple-marker",
+            color: [ 255, 128, 0, 1 ],
+            outline: {
+              width: 1,
+            }
+          },
+        }],
       };
-    
-
-      let popupTemplate = {
-        title: "Connection Point",
-        content: "{ObjectID}",
-      }; 
 
       this.conectionPointsLayer = new FeatureLayer({
-        title: 'Connection Points Layer',
-        source: features,
+        url:"https://info.iharta.md:6443/arcgis/rest/services/TEST/SanduTeza/FeatureServer/0",
         objectIdField: "ObjectID",
-        renderer: {
-          type: "simple",  // autocasts as new SimpleRenderer()
-          symbol: diamondSymbol,
-        },
+        renderer: connectionsRenderer,
         geometryType: 'point',
-        popupTemplate: popupTemplate,
       });
 
     } catch (error) {
@@ -306,8 +322,8 @@ export class EsriMapComponent implements OnInit {
   // ******** INITIAL LOAD
   async init() {
     try {
-      ConnectionPoints = await netAbilityService.getConnectioins();
-      Buildings = await netAbilityService.getBuildings();
+      // ConnectionPoints = await netAbilityService.getConnectioins();
+      // Buildings = await netAbilityService.getBuildings();
 
       
       // Load modules from loadModules Promise
@@ -462,19 +478,12 @@ export class EsriMapComponent implements OnInit {
 
 
 
-
-
-
-
-
-
   async clearMap() {
     this.mapView.graphics.removeAll();
   }
 
   async ngOnInit() {
     try {
-
 
       await this.init();
       await this.setGraphicToConectionPointsLayer();
@@ -483,17 +492,15 @@ export class EsriMapComponent implements OnInit {
       // Make Map, basemap openstreetmap
       this.map = new EsriMap({
         basemap: 'osm',
-        // layers:[ this.conectionPointsLayer ],
+        layers:[ this.conectionPointsLayer, this.buildingsLayer ],
       });
-
-      this.map.add( this.conectionPointsLayer );
       // this.map.add( this.buildingsLayer );
 
       // Set MapView coordonates. zoom and attach to map
       this.mapView = new EsriMapView({
         container: this.mapViewEl.nativeElement,
         center: [28.83605312111365, 47.01804284542325],
-        zoom: 13,
+        zoom: 16,
         map: this.map,
       });
 
